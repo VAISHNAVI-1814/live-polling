@@ -1,5 +1,6 @@
-﻿const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8080/api';
-const WS_BASE = import.meta.env.VITE_WS_URL || 'ws://localhost:8080/ws';
+const API_BASE = import.meta.env.VITE_API_URL || `${typeof window !== 'undefined' ? window.location.protocol : 'http:'}//${typeof window !== 'undefined' ? window.location.hostname : 'localhost'}:8080/api`;
+const WS_BASE = import.meta.env.VITE_WS_URL || `${typeof window !== 'undefined' && window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${typeof window !== 'undefined' ? window.location.hostname : 'localhost'}:8080/ws`;
+
 
 // Generate or retrieve persistent voter token from localStorage
 export function getVoterToken() {
