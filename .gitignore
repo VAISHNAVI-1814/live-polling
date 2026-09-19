@@ -1,4 +1,4 @@
-﻿# Dependencies
+# Dependencies
 node_modules/
 dist/
 dist-ssr/
@@ -15,8 +15,10 @@ dist-ssr/
 *.dll
 *.so
 *.dylib
-server
+/backend/server
+/server
 server.exe
+*.exe
 
 # OS generated files
 .DS_Store
