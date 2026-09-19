@@ -1,0 +1,33 @@
+﻿services:
+  # Backend Web Service (Go + Gin)
+  - type: web
+    name: livepolling-backend
+    env: go
+    rootDir: backend
+    buildCommand: go build -o server ./cmd/server
+    startCommand: ./server
+    plan: free
+    envVars:
+      - key: PORT
+        value: 10000
+      - key: MONGO_URI
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: CLIENT_ORIGIN
+        value: "*"
+
+  # Frontend Static Site (React + Vite)
+  - type: web
+    name: livepolling-frontend
+    env: static
+    rootDir: frontend
+    buildCommand: npm install && npm run build
+    staticPublishPath: dist
+    plan: free
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
