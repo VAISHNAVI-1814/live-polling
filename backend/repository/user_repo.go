@@ -2,6 +2,9 @@
 
 import (
 	"context"
+	"errors"
+	"strings"
+	"sync"
 	"time"
 
 	"live-polling-backend/models"
@@ -13,14 +16,23 @@ import (
 )
 
 type UserRepository struct {
-	collection *mongo.Collection
+	collection  *mongo.Collection
+	isAvailable bool
+	mu          sync.RWMutex
+	memUsers    map[string]*models.User // by email
+	memByID     map[primitive.ObjectID]*models.User
 }
 
-func NewUserRepository(db *mongo.Database) *UserRepository {
+func NewUserRepository(db *mongo.Database, isAvailable bool) *UserRepository {
 	repo := &UserRepository{
-		collection: db.Collection("users"),
+		collection:  db.Collection("users"),
+		isAvailable: isAvailable,
+		memUsers:    make(map[string]*models.User),
+		memByID:     make(map[primitive.ObjectID]*models.User),
 	}
-	repo.initIndexes()
+	if isAvailable {
+		repo.initIndexes()
+	}
 	return repo
 }
 
@@ -37,28 +49,63 @@ func (r *UserRepository) initIndexes() {
 
 func (r *UserRepository) Create(ctx context.Context, user *models.User) error {
 	user.CreatedAt = time.Now().UTC()
-	result, err := r.collection.InsertOne(ctx, user)
-	if err != nil {
-		return err
+	if user.ID.IsZero() {
+		user.ID = primitive.NewObjectID()
 	}
-	user.ID = result.InsertedID.(primitive.ObjectID)
+
+	if r.isAvailable {
+		result, err := r.collection.InsertOne(ctx, user)
+		if err != nil {
+			return err
+		}
+		user.ID = result.InsertedID.(primitive.ObjectID)
+		return nil
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	emailLower := strings.ToLower(user.Email)
+	if _, exists := r.memUsers[emailLower]; exists {
+		return errors.New("user with this email already exists")
+	}
+	r.memUsers[emailLower] = user
+	r.memByID[user.ID] = user
 	return nil
 }
 
 func (r *UserRepository) FindByEmail(ctx context.Context, email string) (*models.User, error) {
-	var user models.User
-	err := r.collection.FindOne(ctx, bson.M{"email": email}).Decode(&user)
-	if err != nil {
-		return nil, err
+	emailLower := strings.ToLower(strings.TrimSpace(email))
+	if r.isAvailable {
+		var user models.User
+		err := r.collection.FindOne(ctx, bson.M{"email": emailLower}).Decode(&user)
+		if err != nil {
+			return nil, err
+		}
+		return &user, nil
 	}
-	return &user, nil
+
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	if user, exists := r.memUsers[emailLower]; exists {
+		return user, nil
+	}
+	return nil, mongo.ErrNoDocuments
 }
 
 func (r *UserRepository) FindByID(ctx context.Context, id primitive.ObjectID) (*models.User, error) {
-	var user models.User
-	err := r.collection.FindOne(ctx, bson.M{"_id": id}).Decode(&user)
-	if err != nil {
-		return nil, err
+	if r.isAvailable {
+		var user models.User
+		err := r.collection.FindOne(ctx, bson.M{"_id": id}).Decode(&user)
+		if err != nil {
+			return nil, err
+		}
+		return &user, nil
 	}
-	return &user, nil
+
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	if user, exists := r.memByID[id]; exists {
+		return user, nil
+	}
+	return nil, mongo.ErrNoDocuments
 }
